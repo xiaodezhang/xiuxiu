@@ -1,0 +1,18 @@
+﻿#BNF+IAT 1.0 UTF-8;
+!grammar call;
+!slot <want>;
+!slot <timepre>;
+!slot <time>;
+!slot <dopre>;
+!slot <something>;
+!slot <value>;
+
+!start <xiuxiustart>;
+<xiuxiustart>:[<want>]<do>;
+<want>:我想|我要|请|帮我|给我|我想要|请帮我|告诉我|请告诉我;
+<do>:[<timepre>][<dopre>][<time>]<something>[<value>];
+<time>:当前|目前|现在;
+<timepre>:当前|目前|现在;
+<dopre>: 增加|加大|降低|提高|减少|减小|了解|知道|获得;
+<something>:按摩摆幅|摆幅|最大能量|能量|温度|速度|力度|自转幅度|幅度|自转|剩余时间|时间;
+<value>:多少|是多少|还剩多少|还剩下多少|还剩|还有|还有多少;
