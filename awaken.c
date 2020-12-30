@@ -31,25 +31,13 @@ enum{
     AK_STATE_INIT,
     AK_STATE_STARTED
 };
+extern int g_status;
 
 static void Sleep(size_t ms)
 {
 	usleep(ms*1000);
 }
 
-int cb_ivw_msg_proc( const char *sessionID, int msg, int param1, int param2, const void *info, void *userData )
-{
-	if (MSP_IVW_MSG_ERROR == msg) //唤醒出错消息
-	{
-		dbg("\n\nMSP_IVW_MSG_ERROR errCode = %d\n\n", param1);
-	}
-	else if (MSP_IVW_MSG_WAKEUP == msg) //唤醒成功消息
-	{
-        printf("wake up\n");
-		/*dbg("\n\nMSP_IVW_MSG_WAKEUP result = %s\n\n", (const char*)info);*/
-	}
-	return 0;
-}
 
 static void iat_cb(char* data, unsigned long len, void *user_para){
 
@@ -68,11 +56,10 @@ static void iat_cb(char* data, unsigned long len, void *user_para){
 }
 
 int ak_init(awaken_rec *ar, const char *session_begin_params
-                , awaken_rec_notifier *notify){
+                , Ak_callback ak_callback){
 
     int errcode;
     size_t param_size;
-	WAVEFORMATEX wavfmt = DEFAULT_FORMAT;
 
     if(get_input_dev_num() == 0){
         return -E_SR_NOACTIVEDEVICE;
@@ -93,8 +80,7 @@ int ak_init(awaken_rec *ar, const char *session_begin_params
 		return -E_SR_NOMEM;
 	}
 	strncpy(ar->session_begin_params, session_begin_params, param_size);
-
-	ar->notif = *notify;
+    ar->ak_callback = ak_callback;
 
     errcode = create_recorder(&ar->recorder, iat_cb, (void*)ar);
     if (ar->recorder == NULL || errcode != 0) {
@@ -103,12 +89,6 @@ int ak_init(awaken_rec *ar, const char *session_begin_params
         goto fail;
     }
 
-    errcode = open_recorder(ar->recorder, get_default_input_dev(), &wavfmt);
-    if (errcode != 0) {
-        dbg("recorder open failed: %d\n", errcode);
-        errcode = -E_SR_RECORDFAIL;
-        goto fail;
-    }
 
 	return 0;
 
@@ -125,17 +105,17 @@ fail:
 		free(ar->session_begin_params);
 		ar->session_begin_params = NULL;
 	}
-	memset(&ar->notif, 0, sizeof(ar->notif));
 #endif
 	return errcode;
 }
 
 int ak_starting_listening(awaken_rec *ar){
 
-    const char* session_id = NULL;
+    const char* session_id;
     int err_code = MSP_SUCCESS;
-	char sse_hints[128];
     int ret;
+    int errcode;
+	WAVEFORMATEX wavfmt = DEFAULT_FORMAT;
 
     if(ar->state == AK_STATE_STARTED){
         dbg("Already started.\n");
@@ -148,29 +128,32 @@ int ak_starting_listening(awaken_rec *ar){
         return err_code;
     }
 
-    err_code = QIVWRegisterNotify(session_id, cb_ivw_msg_proc, NULL);
+    err_code = QIVWRegisterNotify(session_id, ar->ak_callback, ar);
 	if (err_code != MSP_SUCCESS)
 	{
-		snprintf(sse_hints, sizeof(sse_hints), "QIVWRegisterNotify errorCode=%d", err_code);
 		dbg("QIVWRegisterNotify failed! error code:%d\n",err_code);
+        QIVWSessionEnd(session_id, "QIVWRegisterNotify failed");
         return -1;
 	}
 
     ar->audio_status = MSP_AUDIO_SAMPLE_FIRST;
     ar->session_id = session_id;
 
+    errcode = open_recorder(ar->recorder, get_default_input_dev(), &wavfmt);
+    if (errcode != 0) {
+        dbg("recorder open failed: %d\n", errcode);
+        QIVWSessionEnd(session_id, "open recorder failed");
+        return -E_SR_RECORDFAIL;
+    }
+
     ret = start_record(ar->recorder);
     if(ret != 0){
-        dbg("start record failed:%d\n", ret);
-        QIVWSessionEnd(session_id, sse_hints);
-        ar->session_id = NULL;
+        dbg("start recorder failed:%d\n", ret);
+        QIVWSessionEnd(session_id, "start recorder failed");
         return -E_SR_RECORDFAIL;
     }
 
     ar->state = AK_STATE_STARTED;
-
-    if(ar->notif.on_awaken_begin)
-        ar->notif.on_awaken_begin();
 
     return 0;
 }
@@ -202,6 +185,7 @@ int ak_stop_listening(awaken_rec *ar){
         return -E_SR_RECORDFAIL;
     }
     wait_for_rec_stop(ar->recorder, -1);
+    close_recorder(ar->recorder);
     ar->state = AK_STATE_INIT;
     ret = QIVWAudioWrite(ar->session_id, NULL, 0, MSP_AUDIO_SAMPLE_LAST);
     if(MSP_SUCCESS != ret){
@@ -220,7 +204,6 @@ void ak_uninit(awaken_rec *ar)
 	if (ar->recorder) {
 		if(!is_record_stopped(ar->recorder))
 			stop_record(ar->recorder);
-		close_recorder(ar->recorder);
 		destroy_recorder(ar->recorder);
 		ar->recorder = NULL;
 	}

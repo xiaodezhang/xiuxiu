@@ -19,7 +19,7 @@ LDFLAGS += -lmsc -lrt -ldl -lpthread -lasound -lstdc++
 
 #OBJECTS := $(patsubst %.c,%.o,$(wildcard *.c))
 #OBJECTS := xiuxiu.o linuxrec.o speech_recognizer.o
-OBJECTS := test.o awaken.o linuxrec.o
+OBJECTS := test.o awaken.o linuxrec.o speech_recognizer.o
 
 $(BIN_TARGET) : $(OBJECTS)
 	$(CROSS_COMPILE)gcc $(CFLAGS) $^ -o $@ $(LDFLAGS)

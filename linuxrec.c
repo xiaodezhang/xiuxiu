@@ -321,15 +321,19 @@ static void * record_thread_proc(void * para)
 	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
 
 	while(1) {
+
 		frames = rec->period_frames;
 		bytes = frames * rec->bits_per_frame / 8; 
 
 		/* closing, exit the thread */
-		if (rec->state == RECORD_STATE_CLOSING)
+		if (rec->state == RECORD_STATE_CLOSING){
 			break;
+        }
 
-		if(rec->state < RECORD_STATE_RECORDING)
+		if(rec->state < RECORD_STATE_RECORDING){
 			usleep(100000);
+            continue;
+        }
 
 		if (pcm_read(rec, frames) != frames) {
 			return NULL;
@@ -473,7 +477,7 @@ static void close_recorder_internal(struct recorder *rec)
 	handle = (snd_pcm_t *) rec->wavein_hdl;
 
 	/* may be the thread is blocked at read, cancel it */
-	pthread_cancel(rec->rec_thread);
+    pthread_cancel(rec->rec_thread);
 	
 	/* wait for the pcm thread quit first */
 	pthread_join(rec->rec_thread, NULL);

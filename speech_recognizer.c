@@ -58,8 +58,7 @@ static void Sleep(size_t ms)
 
 static void end_sr_on_error(struct speech_rec *sr, int errcode)
 {
-	if(sr->aud_src == SR_MIC)
-		stop_record(sr->recorder);
+    stop_record(sr->recorder);
 	
 	if (sr->session_id) {
 		if (sr->notif.on_speech_end)
@@ -76,8 +75,7 @@ static void end_sr_on_vad(struct speech_rec *sr)
 	int errcode;
 	const char *rslt;
 
-	if (sr->aud_src == SR_MIC)
-		stop_record(sr->recorder);	
+    stop_record(sr->recorder);	
 	sr->rec_stat = MSP_AUDIO_SAMPLE_CONTINUE;
 	while(sr->rec_stat != MSP_REC_STATUS_COMPLETE ){
 		rslt = QISRGetResult(sr->session_id, &sr->rec_stat, 0, &errcode);
@@ -119,49 +117,13 @@ static void iat_cb(char *data, unsigned long len, void *user_para)
 	}
 }
 
-static char * skip_space(char *s)
-{
-	while (s && *s != ' ' && *s != '\0')
-		s++;
-	return s;
-}
-
-static int update_format_from_sessionparam(const char * session_para, WAVEFORMATEX *wavefmt)
-{
-	char *s;
-	if ((s = strstr(session_para, "sample_rate"))) {
-		s = strstr(s, "=");
-		if (s && *s) {
-			s = skip_space(s);
-			if (s && *s) {
-				wavefmt->nSamplesPerSec = atoi(s);
-				wavefmt->nAvgBytesPerSec = wavefmt->nBlockAlign * wavefmt->nSamplesPerSec;
-			}
-		}
-		else
-			return -1;
-	}
-	else {
-		return -1;
-	}
-
-	return 0;
-}
-
-/* devid will be ignored if aud_src is not SR_MIC ; use get_default_dev_id
- * to use the default input device. Currently the device list function is
- * not provided yet. 
- */
-
-int sr_init_ex(struct speech_rec * sr, const char * session_begin_params, 
-			enum sr_audsrc aud_src, record_dev_id devid, 
-				struct speech_rec_notifier * notify)
+int sr_init(struct speech_rec * sr, const char * session_begin_params, 
+			    struct speech_rec_notifier * notify)
 {
 	int errcode;
 	size_t param_size;
-	WAVEFORMATEX wavfmt = DEFAULT_FORMAT;
 
-	if (aud_src == SR_MIC && get_input_dev_num() == 0) {
+	if (get_input_dev_num() == 0) {
 		return -E_SR_NOACTIVEDEVICE;
 	}
 
@@ -174,7 +136,6 @@ int sr_init_ex(struct speech_rec * sr, const char * session_begin_params,
 
 	SR_MEMSET(sr, 0, sizeof(struct speech_rec));
 	sr->state = SR_STATE_INIT;
-	sr->aud_src = aud_src;
 	sr->ep_stat = MSP_EP_LOOKING_FOR_SPEECH;
 	sr->rec_stat = MSP_REC_STATUS_SUCCESS;
 	sr->audio_status = MSP_AUDIO_SAMPLE_FIRST;
@@ -189,22 +150,12 @@ int sr_init_ex(struct speech_rec * sr, const char * session_begin_params,
 
 	sr->notif = *notify;
 	
-	if (aud_src == SR_MIC) {
-		errcode = create_recorder(&sr->recorder, iat_cb, (void*)sr);
-		if (sr->recorder == NULL || errcode != 0) {
-			sr_dbg("create recorder failed: %d\n", errcode);
-			errcode = -E_SR_RECORDFAIL;
-			goto fail;
-		}
-		update_format_from_sessionparam(session_begin_params, &wavfmt);
-	
-		errcode = open_recorder(sr->recorder, devid, &wavfmt);
-		if (errcode != 0) {
-			sr_dbg("recorder open failed: %d\n", errcode);
-			errcode = -E_SR_RECORDFAIL;
-			goto fail;
-		}
-	}
+    errcode = create_recorder(&sr->recorder, iat_cb, (void*)sr);
+    if (sr->recorder == NULL || errcode != 0) {
+        sr_dbg("create recorder failed: %d\n", errcode);
+        errcode = -E_SR_RECORDFAIL;
+        goto fail;
+    }
 
 	return 0;
 
@@ -223,19 +174,13 @@ fail:
 	return errcode;
 }
 
-/* use the default input device to capture the audio. see sr_init_ex */
-int sr_init(struct speech_rec * sr, const char * session_begin_params, 
-		enum sr_audsrc aud_src, struct speech_rec_notifier * notify)
-{
-	return sr_init_ex(sr, session_begin_params, aud_src, 
-			get_default_input_dev(), notify);
-}
-
 int sr_start_listening(struct speech_rec *sr)
 {
 	int ret;
 	const char*		session_id = NULL;
 	int				errcode = MSP_SUCCESS;
+	WAVEFORMATEX wavfmt = DEFAULT_FORMAT;
+    printf("-1-1-1-1-1-1-1\n");
 
 	if (sr->state >= SR_STATE_STARTED) {
 		sr_dbg("already STARTED.\n");
@@ -253,16 +198,26 @@ int sr_start_listening(struct speech_rec *sr)
 	sr->rec_stat = MSP_REC_STATUS_SUCCESS;
 	sr->audio_status = MSP_AUDIO_SAMPLE_FIRST;
 
-	if (sr->aud_src == SR_MIC) {
-		ret = start_record(sr->recorder);
-		if (ret != 0) {
-			sr_dbg("start record failed: %d\n", ret);
-			QISRSessionEnd(session_id, "start record fail");
-			sr->session_id = NULL;
-			return -E_SR_RECORDFAIL;
-		}
-	}
 
+    printf("0000000\n");
+    errcode = open_recorder(sr->recorder, get_default_input_dev(), &wavfmt);
+    if (errcode != 0) {
+        sr_dbg("recorder open failed: %d\n", errcode);
+        QISRSessionEnd(session_id, "open record failed");
+        return -E_SR_RECORDFAIL;
+    }
+    printf("1111\n");
+
+    ret = start_record(sr->recorder);
+    if (ret != 0) {
+        sr_dbg("start record failed: %d\n", ret);
+        close_recorder(sr->recorder);
+        QISRSessionEnd(session_id, "start record failed");
+        sr->session_id = NULL;
+        return -E_SR_RECORDFAIL;
+    }
+
+    printf("2222\n");
 	sr->state = SR_STATE_STARTED;
 
 	if (sr->notif.on_speech_begin)
@@ -292,14 +247,13 @@ int sr_stop_listening(struct speech_rec *sr)
 		return 0;
 	}
 
-	if (sr->aud_src == SR_MIC) {
-		ret = stop_record(sr->recorder);
-		if (ret != 0) {
-			sr_dbg("Stop failed! \n");
-			return -E_SR_RECORDFAIL;
-		}
-		wait_for_rec_stop(sr->recorder, (unsigned int)-1);
-	}
+    ret = stop_record(sr->recorder);
+    if (ret != 0) {
+        sr_dbg("Stop failed! \n");
+        return -E_SR_RECORDFAIL;
+    }
+    wait_for_rec_stop(sr->recorder, (unsigned int)-1);
+    close_recorder(sr->recorder);
 	sr->state = SR_STATE_INIT;
 	ret = QISRAudioWrite(sr->session_id, NULL, 0, MSP_AUDIO_SAMPLE_LAST, &sr->ep_stat, &sr->rec_stat);
 	if (ret != 0) {
@@ -363,7 +317,6 @@ void sr_uninit(struct speech_rec * sr)
 	if (sr->recorder) {
 		if(!is_record_stopped(sr->recorder))
 			stop_record(sr->recorder);
-		close_recorder(sr->recorder);
 		destroy_recorder(sr->recorder);
 		sr->recorder = NULL;
 	}
