@@ -22,6 +22,7 @@ enum{
    ,XIUXIU_STATUS_SLEEPING
    ,XIUXIU_STATUS_AWAKEN
    ,XIUXIU_STATUS_RECOGNIZING
+   ,XIUXIU_STATUS_RECOGNIZED
 };
 
 volatile int g_status;
@@ -42,24 +43,15 @@ typedef struct _UserData {
 
 int cb_ivw_msg_proc( const char *sessionID, int msg, int param1, int param2, const void *info, void *userData )
 {
-    awaken_rec *ar = userData;
 
 	if(MSP_IVW_MSG_ERROR == msg){
 		dbg("\n\nMSP_IVW_MSG_ERROR errCode = %d\n\n", param1);
         return -1;
 	}else if (MSP_IVW_MSG_WAKEUP == msg){
         dbg("wake up\n");
-        printf("99999999\n");
         g_status = XIUXIU_STATUS_AWAKEN;
 	}
 	return 0;
-}
-
-static void show_result(char *string, char is_over)
-{
-	printf("\rResult: [ %s ]", string);
-	if(is_over)
-		putchar('\n');
 }
 
 void on_result(const char *result, char is_last)
@@ -77,7 +69,6 @@ void on_result(const char *result, char is_last)
 			}
 		}
 		strncat(g_result, result, size);
-		show_result(g_result, is_last);
 	}
 }
 void on_speech_begin()
@@ -96,6 +87,8 @@ void on_speech_end(int reason)
 {
 	if (reason == 0){
 		printf("\nSpeaking done \n");
+        printf("Result:%s\n", g_result);
+        g_status = XIUXIU_STATUS_RECOGNIZED;
     }
 	else
 		printf("\nRecognizer error %d\n", reason);
@@ -166,6 +159,16 @@ int build_grammar(UserData *udata)
 	grm_content = NULL;
 
 	return ret;
+}
+
+void cmd_pro(){
+
+    if(!g_result || *g_result == 0){
+        g_status = XIUXIU_STATUS_RECOGNIZING;
+        return;
+    }
+    printf("do something\n");
+    g_status = XIUXIU_STATUS_INIT;
 }
 
 int main(int argc, char *argv[])
@@ -249,21 +252,30 @@ int main(int argc, char *argv[])
 
             case XIUXIU_STATUS_AWAKEN:
                 ak_stop_listening(&ak_iat);
+                g_status = XIUXIU_STATUS_RECOGNIZING;
+                break;
+
+            case XIUXIU_STATUS_RECOGNIZING:
                 errcode = sr_start_listening(&sr_iat);
                 if(errcode){
                     printf("Speech recognizer start listening failed:%d\n", errcode);
                 }
                 g_status = XIUXIU_STATUS_SLEEPING;
                 break;
+
+            case XIUXIU_STATUS_RECOGNIZED:
+                sr_stop_listening(&sr_iat);
+                cmd_pro();
+                break;
         }
     }
     /*! TODO: check the status
      */
-	errcode = ak_stop_listening(&ak_iat);
-	errcode = sr_stop_listening(&sr_iat);
-	if (errcode) {
-		printf("stop listening failed %d\n", errcode);
-	}
+	/*errcode = ak_stop_listening(&ak_iat);*/
+	/*errcode = sr_stop_listening(&sr_iat);*/
+	/*if (errcode) {*/
+		/*printf("stop listening failed %d\n", errcode);*/
+	/*}*/
 
     ak_uninit(&ak_iat);
     sr_uninit(&sr_iat);

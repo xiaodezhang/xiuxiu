@@ -41,7 +41,8 @@
 /* internal state */
 enum {
 	SR_STATE_INIT,
-	SR_STATE_STARTED
+	SR_STATE_STARTED,
+    SR_STATE_STOPPED
 };
 
 
@@ -67,7 +68,7 @@ static void end_sr_on_error(struct speech_rec *sr, int errcode)
 		QISRSessionEnd(sr->session_id, "err");
 		sr->session_id = NULL;
 	}
-	sr->state = SR_STATE_INIT;
+	sr->state = SR_STATE_STOPPED;
 }
 
 static void end_sr_on_vad(struct speech_rec *sr)
@@ -91,7 +92,7 @@ static void end_sr_on_vad(struct speech_rec *sr)
 		QISRSessionEnd(sr->session_id, "VAD Normal");
 		sr->session_id = NULL;
 	}
-	sr->state = SR_STATE_INIT;
+	sr->state = SR_STATE_STOPPED;
 }
 
 /* the record call back */
@@ -180,9 +181,8 @@ int sr_start_listening(struct speech_rec *sr)
 	const char*		session_id = NULL;
 	int				errcode = MSP_SUCCESS;
 	WAVEFORMATEX wavfmt = DEFAULT_FORMAT;
-    printf("-1-1-1-1-1-1-1\n");
 
-	if (sr->state >= SR_STATE_STARTED) {
+	if (sr->state == SR_STATE_STARTED) {
 		sr_dbg("already STARTED.\n");
 		return -E_SR_ALREADY;
 	}
@@ -199,14 +199,12 @@ int sr_start_listening(struct speech_rec *sr)
 	sr->audio_status = MSP_AUDIO_SAMPLE_FIRST;
 
 
-    printf("0000000\n");
     errcode = open_recorder(sr->recorder, get_default_input_dev(), &wavfmt);
     if (errcode != 0) {
         sr_dbg("recorder open failed: %d\n", errcode);
         QISRSessionEnd(session_id, "open record failed");
         return -E_SR_RECORDFAIL;
     }
-    printf("1111\n");
 
     ret = start_record(sr->recorder);
     if (ret != 0) {
@@ -217,7 +215,6 @@ int sr_start_listening(struct speech_rec *sr)
         return -E_SR_RECORDFAIL;
     }
 
-    printf("2222\n");
 	sr->state = SR_STATE_STARTED;
 
 	if (sr->notif.on_speech_begin)
@@ -246,6 +243,12 @@ int sr_stop_listening(struct speech_rec *sr)
 		sr_dbg("Not started or already stopped.\n");
 		return 0;
 	}
+
+    if(sr->state == SR_STATE_STOPPED){
+        close_recorder(sr->recorder);
+	    sr->state = SR_STATE_INIT;
+        return 0;
+    }
 
     ret = stop_record(sr->recorder);
     if (ret != 0) {

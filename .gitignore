@@ -3,3 +3,5 @@
 .vim-bookmarks
 *.o
 bin/msc
+bin/msc/asr/GrmBuild/*
+bin/xiuxiu
