@@ -4,12 +4,16 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+#include <time.h>
 #include "awaken.h"
 #include "msp_errors.h"
 #include "msp_cmn.h"
 #include "qivw.h"
 #include "qisr.h"
 #include "speech_recognizer.h"
+#include "sound_playback.h"
 
 #define	BUFFER_SIZE	4096
 #define SAMPLE_RATE_16K     (16000)
@@ -41,6 +45,9 @@ typedef struct _UserData {
 	char    grammar_id[MAX_GRAMMARID_LEN]; //保存语法构建返回的语法ID
 }UserData;
 
+extern int text_to_speech(const char* text);
+
+
 int cb_ivw_msg_proc( const char *sessionID, int msg, int param1, int param2, const void *info, void *userData )
 {
 
@@ -64,7 +71,7 @@ void on_result(const char *result, char is_last)
 			if (g_result)
 				g_buffersize += BUFFER_SIZE;
 			else {
-				printf("mem alloc failed\n");
+				dbg("mem alloc failed\n");
 				return;
 			}
 		}
@@ -81,17 +88,17 @@ void on_speech_begin()
 	g_buffersize = BUFFER_SIZE;
 	memset(g_result, 0, g_buffersize);
 
-	printf("Start Listening...\n");
+	dbg("Start Listening...\n");
 }
 void on_speech_end(int reason)
 {
 	if (reason == 0){
-		printf("\nSpeaking done \n");
-        printf("Result:%s\n", g_result);
+		dbg("\nSpeaking done \n");
+        dbg("Result:%s\n", g_result);
         g_status = XIUXIU_STATUS_RECOGNIZED;
     }
 	else
-		printf("\nRecognizer error %d\n", reason);
+		dbg("\nRecognizer error %d\n", reason);
 }
 
 int build_grm_cb(int ecode, const char *info, void *udata)
@@ -104,12 +111,12 @@ int build_grm_cb(int ecode, const char *info, void *udata)
 	}
 
 	if (MSP_SUCCESS == ecode && NULL != info) {
-		printf("构建语法成功！ 语法ID:%s\n", info);
+		dbg("构建语法成功！ 语法ID:%s\n", info);
 		if (NULL != grm_data)
 			snprintf(grm_data->grammar_id, MAX_GRAMMARID_LEN - 1, info);
 	}
 	else
-		printf("构建语法失败！%d\n", ecode);
+		dbg("构建语法失败！%d\n", ecode);
 
 	return 0;
 }
@@ -124,7 +131,7 @@ int build_grammar(UserData *udata)
 
 	grm_file = fopen(GRM_FILE, "rb");	
 	if(NULL == grm_file) {
-		printf("打开\"%s\"文件失败！[%s]\n", GRM_FILE, strerror(errno));
+		dbg("打开\"%s\"文件失败！[%s]\n", GRM_FILE, strerror(errno));
 		return -1; 
 	}
 
@@ -135,7 +142,7 @@ int build_grammar(UserData *udata)
 	grm_content = (char *)malloc(grm_cnt_len + 1);
 	if (NULL == grm_content)
 	{
-		printf("内存分配失败!\n");
+		dbg("内存分配失败!\n");
 		fclose(grm_file);
 		grm_file = NULL;
 		return -1;
@@ -161,14 +168,216 @@ int build_grammar(UserData *udata)
 	return ret;
 }
 
-void cmd_pro(){
+static void print_elements(xmlNode *a_node){
 
-    if(!g_result || *g_result == 0){
-        g_status = XIUXIU_STATUS_RECOGNIZING;
+    xmlNode *cur_node = NULL;
+
+    for(cur_node = a_node; cur_node; cur_node = cur_node->next){
+        if(cur_node->type == XML_ELEMENT_NODE){
+            dbg("node type: Element, name:%s\n", cur_node->name);
+        }
+        if(cur_node->type == XML_TEXT_NODE){
+            dbg("node type: Text, content:%s\n", cur_node->content);
+        }
+        print_elements(cur_node->children);
+    }
+}
+
+static xmlChar* get_element_content(xmlNode *root, const char* node_name){
+
+    xmlNode *cur_node;
+    xmlChar *content;
+
+    for(cur_node = root; cur_node; cur_node = cur_node->next){
+        if(cur_node->type == XML_ELEMENT_NODE && strcmp(cur_node->name, node_name) == 0){
+            if(cur_node->children){
+                return cur_node->children->content;
+            }
+        }
+        if(content = get_element_content(cur_node->children, node_name))
+            return content;
+    }
+
+    return NULL;
+}
+
+static void random_init(){
+
+    struct timespec ttime = {0, 0};
+    clock_gettime(CLOCK_MONOTONIC, &ttime);
+    unsigned int seed = ttime.tv_sec+ttime.tv_nsec;
+    srandom(seed);
+}
+
+static int random_constructor(int num){
+
+    random_init();
+    return num*random()/RAND_MAX;
+}
+
+void not_recognized(){
+
+    int ret;
+
+    const char *asorry[2] = {"对不起", "不好意思"};
+    const char *aplease[2] = {"麻烦", "请"};
+    const char *not_catched = "我没有听清";
+    const char *say_again = "你再说一遍";
+
+    const char* sorry = asorry[random_constructor(2)];
+    const char* please = aplease[random_constructor(2)];
+
+    char response[200];
+    response[0] = '\0';
+    strcat(strcat(strcat(strcat(response, sorry), not_catched), please), say_again) ;
+    ret = text_to_speech(response);
+    if(MSP_SUCCESS != ret){
+        dbg("text to speech failed:%d", ret);
         return;
     }
-    printf("do something\n");
-    g_status = XIUXIU_STATUS_INIT;
+    audio_play("tmp.wav", 0);
+}
+
+void greeting(){
+
+    int ret;
+
+    ret = text_to_speech("你好");
+    if(MSP_SUCCESS != ret){
+        dbg("text to speech failed:%d", ret);
+        return;
+    }
+    audio_play("tmp.wav", 0);
+}
+
+void cmd_pro(){
+
+    xmlDocPtr doc = NULL;
+    xmlNode *root;
+    char response[200];
+    response[0] = '\0';
+    int ret;
+    int success = 1;
+
+    if(!g_result || *g_result == 0){
+        success = 0;
+        goto exit;
+    }
+    doc = xmlReadMemory(g_result, strlen(g_result), "noname.xml", NULL, 0);
+    if(doc == NULL){
+        dbg("Failed to parse document\n");
+        success = 0;
+        goto exit;
+    }
+    root = xmlDocGetRootElement(doc);
+    xmlChar *confidence = get_element_content(root, "confidence");
+    if(!confidence){
+        dbg("Error:no confidence:%s\n", confidence);
+        success = 0;
+        goto exit;
+    }
+    int confidence_i = atoi(confidence);
+    if(confidence_i == 0){
+        ferror("Convert confidence to integer failed\n");
+        success = 0;
+        goto exit;
+    }
+
+    if(confidence_i < 20){
+        dbg("Confidence smallar than 50.\n");
+        success = 0;
+        goto exit;
+    }
+    xmlChar *something = get_element_content(root, "something");
+    if(!something){
+        xmlChar *time = get_element_content(root, "time");
+        if(time && (strcmp(time, "下一首") == 0 || strcmp(time, "上一首") == 0)){
+            /*! TODO: play music
+             */
+            if(strcmp(time, "下一首") == 0){
+            }else{
+            }
+        }else{
+            success = 0;
+        }
+        goto exit;
+    }
+
+    xmlChar *dopre = get_element_content(root, "dopre");
+    if(dopre){
+        /*operation-command*/
+        if(strcmp(something, "最大能量") == 0
+                || strcmp(something, "能量") == 0
+                || strcmp(something, "温度") == 0
+                || strcmp(something, "温") == 0){
+            strcat(response, "能量已");
+        }else if(strcmp(something, "力度") == 0){
+            strcat(response, "力度已");
+        }else if(strcmp(something, "歌") == 0
+                || strcmp(something, "歌曲") == 0
+                || strcmp(something, "音乐") == 0){
+            if(strcmp(dopre, "播放") == 0 
+                    || strcmp(dopre, "播") == 0){
+            }else if(strcmp(dopre, "停止") == 0
+                    || strcmp(dopre, "暂停") == 0
+                    || strcmp(dopre, "停止播放") == 0
+                    || strcmp(dopre, "暂停播放") == 0){
+            }else{
+                dbg("Error:Unexpected grammer:%s\n", dopre);
+                success = 0;
+            }
+            /*! TODO: play music
+             */
+            goto exit;
+        }else{
+            dbg("Error:Unexpected grammer:%s\n", something);
+            success = 0;
+            goto exit;
+        }
+        if(strcmp(dopre, "增") == 0
+                || strcmp(dopre, "增加") == 0
+                || strcmp(dopre, "提高") == 0
+                || strcmp(dopre, "升") == 0
+                || strcmp(dopre, "加大") == 0){
+            strcat(response, "增加");
+        }else if(strcmp(dopre, "降低") == 0
+                || strcmp(dopre, "降") == 0
+                || strcmp(dopre, "减") == 0
+                || strcmp(dopre, "减少") == 0
+                || strcmp(dopre, "减小") == 0){
+            strcat(response, "减小");
+        }else{
+            dbg("Error:Unexpected grammer:%s\n", dopre);
+            success = 0;
+            goto exit;
+        }
+        ret = text_to_speech(response);
+        if(MSP_SUCCESS != ret){
+            dbg("text to speech failed:%d", ret);
+            success = 0;
+            goto exit;
+        }
+        audio_play("tmp.wav", 0);
+    }else{
+        /*asking-command*/
+        xmlChar *value = get_element_content(root, "value");
+        if(!value){
+            dbg("Grammer error:no value\n");
+            success = 0;
+            goto exit;
+        }
+    }
+    /*print_elements(root);*/
+
+exit:
+    if(doc)
+        xmlFreeDoc(doc);
+    if(success){
+        g_status = XIUXIU_STATUS_INIT;
+    }else{
+        not_recognized();
+        g_status = XIUXIU_STATUS_RECOGNIZING;
+    }
 }
 
 int main(int argc, char *argv[])
@@ -187,6 +396,8 @@ int main(int argc, char *argv[])
 		on_speech_end
 	};
     UserData asr_data;
+
+    audio_init();
 
 	ret = MSPLogin(NULL, NULL, lgi_param);
 	if (MSP_SUCCESS != ret)
@@ -253,6 +464,7 @@ int main(int argc, char *argv[])
             case XIUXIU_STATUS_AWAKEN:
                 ak_stop_listening(&ak_iat);
                 g_status = XIUXIU_STATUS_RECOGNIZING;
+                greeting();
                 break;
 
             case XIUXIU_STATUS_RECOGNIZING:
@@ -281,6 +493,7 @@ int main(int argc, char *argv[])
     sr_uninit(&sr_iat);
 
 exit:
+    audio_destroy();
 	MSPLogout(); //退出登录
 	return 0;
 

@@ -8,9 +8,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
-#include "../../include/qtts.h"
-#include "../../include/msp_cmn.h"
-#include "../../include/msp_errors.h"
+#include <string.h>
+#include "qtts.h"
+#include "msp_cmn.h"
+#include "msp_errors.h"
 typedef int SR_DWORD;
 typedef short int SR_WORD ;
 
@@ -52,7 +53,7 @@ wave_pcm_hdr default_wav_hdr =
 	0  
 };
 /* 文本合成 */
-int text_to_speech(const char* src_text, const char* des_path, const char* params)
+int text_to_speech_internal(const char* src_text, const char* des_path, const char* params)
 {
 	int          ret          = -1;
 	FILE*        fp           = NULL;
@@ -132,6 +133,14 @@ int text_to_speech(const char* src_text, const char* des_path, const char* param
 	return ret;
 }
 
+int text_to_speech(const char* text){
+
+	const char* session_begin_params = "engine_type = local,voice_name=xiaoyan, text_encoding = UTF8, tts_res_path = fo|res/tts/xiaoyan.jet;fo|res/tts/common.jet, sample_rate = 16000, speed = 50, volume = 50, pitch = 50, rdn = 2";
+	const char* filename             = "tmp.wav"; //合成的语音文件名称
+    return text_to_speech_internal(text, filename, session_begin_params);
+}
+
+#if 0
 int main(int argc, char* argv[])
 {
 	int         ret                  = MSP_SUCCESS;
@@ -179,4 +188,5 @@ exit:
 
 	return 0;
 }
+#endif
 
