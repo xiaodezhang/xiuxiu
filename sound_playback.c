@@ -46,7 +46,7 @@ typedef enum {
     MUSIC_NEXT,
     MUSIC_PREVIOUS
 } MUSIC_STATE;
-MUSIC_STATE g_music_state = 0;
+MUSIC_STATE g_music_state = MUSIC_PREPARE;
 
 typedef enum {
       AUDIO_INVALID
@@ -154,7 +154,7 @@ static int set_param(const char *filename, SoundParam* sp){
     FILE *f = fopen(filename, "rb");
     if(!f)
         return -1;
-    char *head = malloc(wave_pcm_hdr_size);
+    char *head = (char*)malloc(wave_pcm_hdr_size);
     if(!head)
         return -1;
     size_t n = fread(head, 1, wave_pcm_hdr_size, f);
@@ -208,7 +208,7 @@ static int set_param(const char *filename, SoundParam* sp){
 	if (pcm = snd_pcm_hw_params_set_channels(pcm_handle, params, channels) < 0) 
 		dbg("ERROR: Can't set channels number. %s\n", snd_strerror(pcm));
 
-	if (pcm = snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0) < 0) 
+	if (pcm = snd_pcm_hw_params_set_rate_near(pcm_handle, params, (unsigned int*)&rate, 0) < 0) 
 		dbg("ERROR: Can't set rate. %s\n", snd_strerror(pcm));
 
 	/* Write parameters */
@@ -347,7 +347,7 @@ static void* music_play_internal(void *m){
     int type;
     Music *music;
 
-    music = m;
+    music = (Music*)m;
     cm = music->current;
     type = music->type;
     pthread_mutex_lock(&lock);
@@ -377,7 +377,7 @@ static void* music_play_internal(void *m){
             continue;
         }
         buff_size = sp.frames * sp.channels * 2;
-        if((buff = malloc(buff_size)) == NULL){
+        if((buff = (char*)malloc(buff_size)) == NULL){
             dbg("memory error:%s\n", strerror(errno));
             file_close(&file);
             exit(-1);
@@ -521,7 +521,7 @@ static void* audio_write(void* arg){
     sp.pcm_handle = NULL;
     while(1){
 
-        state = g_audio_state;
+        state = (AUDIO_STATE)g_audio_state;
         switch (state) {
             case AUDIO_INIT:
             case AUDIO_SETUP:
@@ -632,7 +632,7 @@ static void* audio_write(void* arg){
                 }
                 set_param(audio.filename, &sp);
                 buff_size = sp.frames * sp.channels *2;
-                if((buff = malloc(buff_size)) == NULL){
+                if((buff = (char*)malloc(buff_size)) == NULL){
                     dbg("Memory error:%s\n", strerror(errno));
                     file_close(&file);
                     g_audio_state = AUDIO_SETUP;
@@ -710,13 +710,13 @@ static int music_copy(Music *music_dst, Music *music_src){
         return -1;
     }
     music_dst->num = music_src->num;
-    music_dst->list = malloc(sizeof(char*)*music_src->num);
+    music_dst->list = (char**)malloc(sizeof(char*)*music_src->num);
     if(!music_dst->list){
         dbg("memory error, %s", strerror(errno));
         exit(-1);
     }
     for (int i = 0; i < music_dst->num; i++) {
-        music_dst->list[i] = malloc(strlen(music_src->list[i])+1);
+        music_dst->list[i] = (char*)malloc(strlen(music_src->list[i])+1);
         if(!music_dst->list[i]){
             dbg("memory error, %s", strerror(errno));
             exit(-1);

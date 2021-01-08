@@ -189,7 +189,7 @@ static xmlChar* get_element_content(xmlNode *root, const char* node_name){
     xmlChar *content;
 
     for(cur_node = root; cur_node; cur_node = cur_node->next){
-        if(cur_node->type == XML_ELEMENT_NODE && strcmp(cur_node->name, node_name) == 0){
+        if(cur_node->type == XML_ELEMENT_NODE && strcmp((const char*)cur_node->name, node_name) == 0){
             if(cur_node->children){
                 return cur_node->children->content;
             }
@@ -256,8 +256,9 @@ void cmd_pro(){
     xmlNode *root;
     char response[200];
     response[0] = '\0';
-    int ret;
+    int ret, confidence_i;
     int success = 1;
+    char *confidence, *something, *dopre, *value, *time;
 
     if(!g_result || *g_result == 0){
         success = 0;
@@ -270,15 +271,15 @@ void cmd_pro(){
         goto exit;
     }
     root = xmlDocGetRootElement(doc);
-    xmlChar *confidence = get_element_content(root, "confidence");
+    confidence = (char*)get_element_content(root, "confidence");
     if(!confidence){
         dbg("Error:no confidence:%s\n", confidence);
         success = 0;
         goto exit;
     }
-    int confidence_i = atoi(confidence);
+    confidence_i = atoi(confidence);
     if(confidence_i == 0){
-        ferror("Convert confidence to integer failed\n");
+        perror("Convert confidence to integer failed\n");
         success = 0;
         goto exit;
     }
@@ -288,9 +289,9 @@ void cmd_pro(){
         success = 0;
         goto exit;
     }
-    xmlChar *something = get_element_content(root, "something");
+    something = (char*)get_element_content(root, "something");
     if(!something){
-        xmlChar *time = get_element_content(root, "time");
+        time = (char*)get_element_content(root, "time");
         if(time && (strcmp(time, "下一首") == 0 || strcmp(time, "上一首") == 0)){
             /*! TODO: play music
              */
@@ -303,7 +304,7 @@ void cmd_pro(){
         goto exit;
     }
 
-    xmlChar *dopre = get_element_content(root, "dopre");
+    dopre = (char*)get_element_content(root, "dopre");
     if(dopre){
         /*operation-command*/
         if(strcmp(something, "最大能量") == 0
@@ -360,7 +361,7 @@ void cmd_pro(){
         audio_play("tmp.wav", 0);
     }else{
         /*asking-command*/
-        xmlChar *value = get_element_content(root, "value");
+        value = (char*)get_element_content(root, "value");
         if(!value){
             dbg("Grammer error:no value\n");
             success = 0;

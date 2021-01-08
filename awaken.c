@@ -42,7 +42,7 @@ static void Sleep(size_t ms)
 static void iat_cb(char* data, unsigned long len, void *user_para){
 
     int ret;
-    awaken_rec *ar = user_para;
+    awaken_rec *ar = (awaken_rec*)user_para;
 	char sse_hints[128];
 
     ret = QIVWAudioWrite(ar->session_id, data, len, ar->audio_status);

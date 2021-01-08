@@ -493,7 +493,8 @@ static void close_recorder_internal(struct recorder *rec)
 static int get_pcm_device_cnt(snd_pcm_stream_t stream)
 {
 	void **hints, **n;
-	char *io, *filter, *name;
+	char *io, *name;
+    const char *filter;
 	int cnt = 0;
 
 	if (snd_device_name_hint(-1, "pcm", &hints) < 0)
@@ -548,10 +549,10 @@ static int list_pcm(snd_pcm_stream_t stream, char**name_out,
 		goto fail; 
 	}
 
-	*name_out = calloc(sizeof(char *) , (1+cnt));
+	*name_out = (char*)calloc(sizeof(char *) , (1+cnt));
 	if (*name_out == NULL)
 		goto fail;
-	*desc_out = calloc(sizeof(char *) , (1 + cnt));
+	*desc_out = (char*)calloc(sizeof(char *) , (1 + cnt));
 	if (*desc_out == NULL)
 		goto fail;
 
@@ -572,7 +573,7 @@ static int list_pcm(snd_pcm_stream_t stream, char**name_out,
 			if (*descr) free(*descr);
 		} else {
 			if (*descr == NULL) {
-				*descr = malloc(4);
+				*descr = (char*)malloc(4);
 				memset(*descr, 0, 4);
 			}
 			name++;
